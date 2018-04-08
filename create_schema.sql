@@ -7,6 +7,7 @@ drop function if exists student_exists_trigger() cascade;
 drop function if exists pre_rex_course_offering_existed_at_one_point_function() cascade;
 drop function if exists enrollments_check_if_enrolled() cascade;
 drop function if exists enrollments_check_max_capacity() cascade;
+drop function if exists enrollments_pre_req_check() cascade;
 create table students (
 	student_id varchar(9) primary key,
 	name varchar(255) not null,
@@ -45,7 +46,7 @@ create table enrollments (
 	term_code integer,
 	student_id varchar(9),
 	grade int,
-	check(grade >= 0 and grade <= 100),
+	check( (grade >= 0 and grade <= 100) or (grade is null) ),
 	primary key( course_id, term_code, student_id ),
 	foreign key( course_id, term_code ) references course_offerings( course_id, term_code )
 		on delete restrict
@@ -149,8 +150,41 @@ after insert on enrollments
 for each row
 execute procedure enrollments_check_max_capacity();
 
+--ENROLLMENT pre-req check
+create function enrollments_pre_req_check()
+returns trigger as
+$BODY$
+declare i integer := 0;
+declare p record;
+declare S_has_taken record;
+begin
+	for p in (select * from pre_rex
+	where new.course_id = pre_rex.course_id and
+	new.term_code = pre_rex.term_code) loop
+		i := i+1;
+		raise notice 'Prereq#%, % requires course %',i,p.course_id,p.prereq;
+		for S_has_taken in (select * from enrollments
+		where new.student_id = enrollments.student_id) loop
+			raise notice 'S_has_taken %',S_has_taken;
+		end loop;
+	end loop;
+--if i > 1
+--then
+--	raise exception 'Error: Pre-requisites not met. Either failed or student is
+--	registered in the pre-req course for a term LATER than this enrollment.';
+--end if;
+return new;
+end
+$BODY$
+language plpgsql;
+--ENROLLMENT pre-req check trigger
+create trigger enrollments_pre_req_check_trigger
+before insert on enrollments
+for each row
+execute procedure enrollments_pre_req_check();
+
 --Test case COURSES
-insert into courses values('CSC 225'),('MATH 122'),('CSC 226'),('CSC 115');
+insert into courses values('CSC 225'),('MATH 122'),('CSC 226'),('CSC 115'),('CSC 110'),('MATH 101');
 
 --Test case STUDENTS
 insert into students values('V00123456','Cameron Elwood');
@@ -161,14 +195,17 @@ insert into students values('V00556677','Bilbo Baggins');
 insert into course_offerings values('CSC 225',201801,'Special Algorithms I','Bill Bird',125);
 insert into course_offerings values('MATH 122',201701,'Logic and Foundations','Gary M',50);
 insert into course_offerings values('CSC 115',201701,'Java II','Tibor van Rooij',200);
-insert into course_offerings values('CSC 115',201601,'Original Java','Teebs',3);
+insert into course_offerings values('CSC 115',201601,'Original Java II','Teebs',3);
+insert into course_offerings values('CSC 110',201501,'Java I','Bob',10);
+insert into course_offerings values('MATH 101',201501,'Calculus I','Amy',126);
 
 --Test case PRE_REQS
 insert into pre_rex values('MATH 122', 'CSC 225', 201801),('CSC 115', 'CSC 225', 201801);
+insert into pre_rex values('CSC 110', 'CSC 115', 201601),('MATH 101','MATH 122', 201701);
 
 --Test case ENROLLMENTS
-insert into enrollments values('MATH 122',201701,'V00556677',100);
-insert into enrollments values('CSC 115',201601,'V00123456', 25);
-insert into enrollments values('CSC 115',201601,'V00223344', 51);
-insert into enrollments values('CSC 115',201601,'V00556677', 78);
---insert into enrollments values('CSC 115',201601,'V00123456', 25);
+insert into enrollments values('MATH 122',201701,'V00123456',100);
+insert into enrollments values('CSC 115',201601,'V00123456', null);
+--insert into enrollments values('CSC 115',201601,'V00223344', 51);
+--insert into enrollments values('CSC 115',201601,'V00556677', 78);
+insert into enrollments values('CSC 225',201801,'V00123456', 25);
