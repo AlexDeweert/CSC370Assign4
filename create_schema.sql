@@ -5,7 +5,8 @@ drop table if exists students cascade;
 drop table if exists courses cascade;
 drop function if exists student_exists_trigger() cascade;
 drop function if exists pre_rex_course_offering_existed_at_one_point_function() cascade;
-drop function if exists enrollment_check_if_enrolled() cascade;
+drop function if exists enrollments_check_if_enrolled() cascade;
+drop function if exists enrollments_check_max_capacity() cascade;
 create table students (
 	student_id varchar(9) primary key,
 	name varchar(255) not null,
@@ -96,23 +97,19 @@ for each row
 execute procedure pre_rex_course_offering_existed_at_one_point_function();
 
 --Function: ENROLLMENTS Check if already enrolled
-create function enrollment_check_if_enrolled()
+create function enrollments_check_if_enrolled()
 returns trigger as
 $BODY$
+declare counts integer;
 begin
 --When enrolling, we insert course_id, term_code, student_id, grade
 --If inserting course_id && term_code && student_id the same, deny
-if( 
-	select count(enrollments.student_id)
-	from enrollments where new.student_id = enrollments.student_id) > 0
-and 
-(
-	select count(enrollments.course_id)
-	from enrollments where new.course_id = enrollments.course_id) > 0
-and
-(
-	select count(enrollments.term_code)
-	from enrollments where new.term_code = enrollments.term_code) > 0
+if( select count(enrollments.student_id)
+	from enrollments where 
+	new.student_id = enrollments.student_id
+	and new.course_id = enrollments.course_id
+	and new.term_code = enrollments.term_code
+) > 0
 then
 	raise exception 'Error: Student already enrolled.';
 end if;
@@ -121,17 +118,24 @@ end
 $BODY$
 language plpgsql;
 --ENROLLMENT check if enrolled trigger
-create trigger enrollment_check_if_enrolled_trigger
+create trigger enrollments_check_if_enrolled_trigger
 before insert on enrollments
 for each row
-execute procedure enrollment_check_if_enrolled();
+execute procedure enrollments_check_if_enrolled();
 
 --ENROLLMENT check not max capacity
-create function enrollment_check_max_capacity()
+create function enrollments_check_max_capacity()
 returns trigger as
 $BODY$
-
-if--
+begin
+if( select count(*) from enrollments 
+     where new.course_id = enrollments.course_id
+	 and 
+	 new.term_code = enrollments.term_code )
+   >
+  ( select capacity from course_offerings
+    where new.course_id = course_offerings.course_id
+    and new.term_code = course_offerings.term_code )
 then
 	raise exception 'Error: Course at max capacity. Cannot enroll!';
 end if;
@@ -140,7 +144,10 @@ end
 $BODY$
 language plpgsql;
 --ENROLLMENT check not max cap trigger
-create trigger enrollment_check_if_enrolled_trigger
+create trigger enrollments_check_max_capacity_trigger
+after insert on enrollments
+for each row
+execute procedure enrollments_check_max_capacity();
 
 --Test case COURSES
 insert into courses values('CSC 225'),('MATH 122'),('CSC 226'),('CSC 115');
@@ -154,9 +161,14 @@ insert into students values('V00556677','Bilbo Baggins');
 insert into course_offerings values('CSC 225',201801,'Special Algorithms I','Bill Bird',125);
 insert into course_offerings values('MATH 122',201701,'Logic and Foundations','Gary M',50);
 insert into course_offerings values('CSC 115',201701,'Java II','Tibor van Rooij',200);
+insert into course_offerings values('CSC 115',201601,'Original Java','Teebs',3);
 
 --Test case PRE_REQS
 insert into pre_rex values('MATH 122', 'CSC 225', 201801),('CSC 115', 'CSC 225', 201801);
 
 --Test case ENROLLMENTS
 insert into enrollments values('MATH 122',201701,'V00556677',100);
+insert into enrollments values('CSC 115',201601,'V00123456', 25);
+insert into enrollments values('CSC 115',201601,'V00223344', 51);
+insert into enrollments values('CSC 115',201601,'V00556677', 78);
+--insert into enrollments values('CSC 115',201601,'V00123456', 25);
