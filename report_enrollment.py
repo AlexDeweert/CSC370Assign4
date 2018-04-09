@@ -1,3 +1,9 @@
+#
+# report_enrollment.py
+# Alex L. Deweert
+# V00855767
+# CSC 370 April 4th, 2018
+
 import psycopg2, sys
 
 try:
@@ -13,42 +19,30 @@ def print_row(term, course_code, course_name, instructor_name, total_enrollment,
 	print("%6s %10s %-35s %-25s %s/%s"%(str(term), str(course_code), str(course_name), str(instructor_name), str(total_enrollment), str(maximum_capacity)) )
 
 # Mockup: Print some data for a few made up classes
-cur.execute("""with a as( select course_id, term_code, count(student_id) over( partition by course_id, term_code ) as c from enrollments group by course_id, term_code, student_id),
-b as ( select * from a group by course_id, term_code, c ),
-d as ( select * from b union select course_id, term_code, 0 as c from enrollments)
-select term_code as term,course_id,name as course_name,instructor as instructor_name, c as total_enrollment, capacity as maximum_capacity from d natural join enrollments natural join course_offerings;""")
+cur.execute("""
+with a as( select enrollments.course_id, enrollments.term_code, count(*) over (partition by enrollments.course_id, enrollments.term_code) as c from enrollments),
+b as ( select course_offerings.capacity as cap, course_offerings.term_code as baa, course_offerings.course_id as boo, a.c, a.course_id as 
+blah, a.course_id as acid, a.term_code as atc, course_offerings.instructor as iname, course_offerings.name as cnamec from a full outer join course_offerings 
+on a.course_id = course_offerings.course_id and a.term_code = course_offerings.term_code)
+select
+b.baa,
+b.boo, 
+b.cnamec, 
+b.iname,
+case when b.c is null then 0 else b.c end as total_enrollment, 
+b.cap
+from b
+group by baa, boo, cnamec, iname, total_enrollment, cap
+order by baa asc, boo;""")
 rows = []
-trimmed = []
-updated = []
 rows = cur.fetchall()
 
 for a in rows:
-	#print(a)
-	if a[0:5] not in trimmed:
-		trimmed.append(a[0:5])
-		updated.append(a)
+	print_row(a[0], a[1], a[2], a[3], a[4], a[5])
 
-for j in updated:
-	print(j)
-
-
-
-#Add students
-'''for s in rows:
-	for j in rows:
-		if s[0] == j[0] and s[1] == j[1] and s[2] == j[2] and s[3]==j[3] and s[4]!=j[4] and s[5]==j[5]:
-			if s[4] != 0:
-				trimmed.append(s)
-			elif j[4] != 0:
-				trimmed.append(j)
-		else:
-			trimmed.append(j)
-
-for x in trimmed:
-	print(x)
 #print_row(201709, 'CSC 106', 'The Practice of Computer Science', 'Bill Bird', 203, 215)
 #print_row(201709, 'CSC 110', 'Fundamentals of Programming: I', 'Jens Weber', 166, 200)
 #print_row(201801, 'CSC 370', 'Database Systems', 'Bill Bird', 146, 150)
-'''
+
 cur.close()
 conn.close()
