@@ -15,7 +15,7 @@ input_filename = sys.argv[1]
 #Open DB Connection
 try:
 	conn = psycopg2.connect( dbname="alexand", user="alexand", host="studdb1.csc.uvic.ca", password="V00855767")
-	print("Connected!")
+	#print("Connected!")
 except:
 	print("Error: Unable to connect to the database!")
 
@@ -23,8 +23,7 @@ cur = conn.cursor()
 
 input_row = []
 row_list = []
-pre_rex_list = []
-course_set = []
+student_set = []
 
 #Read in input to row lists
 with open(input_filename) as f:
@@ -35,44 +34,35 @@ with open(input_filename) as f:
 			print("Error: Invalid input line \"%s\""%(','.join(row)), file=sys.stderr)
 			#Abort here if necessary
 			break
-		input_row = row[0:5]
-		pre_rex_list = row[5:]
-		input_row.append(pre_rex_list)
+		input_row = row[0:]
 		row_list.append(input_row)
 
-#Add distinct course codes to courses
-for e in row_list:
-	course_set.append(e[0])
-course_set = set(course_set)
-for p in course_set:
+#Add students
+for s in row_list:
+	if s[1:3] not in student_set:
+		student_set.append(s[1:3])
+#student_set = set(student_set)
+for s in student_set:
+	#print(s)
 	try: 
-		cur.execute("""INSERT INTO courses VALUES('{0}');""".format(p))
+		cur.execute("""INSERT INTO students VALUES('{}','{}');""".format(s[0],s[1]))
 		#conn.commit()
 	except psycopg2.Error as e:
 		conn.rollback()
 		print(e.pgerror)
 
-#Add to the course offerings tables
+#Add to the enrollments table
 for a in row_list:
-	#print(a[0:5])
+	#print(a)
 	try:
-		cur.execute("""INSERT INTO course_offerings VALUES('{}',{},'{}','{}','{}');""".format(a[0],a[2],a[1],a[3],a[4]))
-		#conn.commit()
+		if a[0] == 'ADD':
+			cur.execute("""INSERT INTO enrollments VALUES('{}',{},'{}',null);""".format(a[3],a[4],a[1],a[3]))
+		else:
+			cur.execute("""DELETE FROM enrollments WHERE course_id = '{}' AND term_code = {} AND student_id = '{}';""".format(a[3],a[4],a[1]))
 	except psycopg2.Error as e:
 		conn.rollback()
 		print(e.pgerror)
 
-#Add to the pre-requisites table
-for b in row_list:
-	#print("Inserting row: " + str(b))
-	if b[5]:
-		for pre_req in b[5]:
-			try:
-				cur.execute("""INSERT INTO pre_rex VALUES('{}','{}',{});""".format(pre_req,b[0],b[2]))
-				#conn.commit()
-			except psycopg2.Error as e:
-				conn.rollback()
-				print(e.pgerror)
 conn.commit()
 cur.close()
 conn.close()

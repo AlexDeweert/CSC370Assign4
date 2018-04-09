@@ -15,7 +15,7 @@ input_filename = sys.argv[1]
 #Open DB Connection
 try:
 	conn = psycopg2.connect( dbname="alexand", user="alexand", host="studdb1.csc.uvic.ca", password="V00855767")
-	print("Connected!")
+	#print("Connected!")
 except:
 	print("Error: Unable to connect to the database!")
 
