@@ -8,6 +8,7 @@ drop function if exists pre_rex_course_offering_existed_at_one_point_function() 
 drop function if exists enrollments_check_if_enrolled() cascade;
 drop function if exists enrollments_check_max_capacity() cascade;
 drop function if exists enrollments_pre_req_check() cascade;
+drop function if exists enrollments_allow_null_drop() cascade;
 create table students (
 	student_id varchar(9) primary key,
 	name varchar(255) not null,
@@ -124,6 +125,26 @@ before insert on enrollments
 for each row
 execute procedure enrollments_check_if_enrolled();
 
+--ENROLLMENT restrict DROP if grade not null
+create function enrollments_allow_null_drop()
+returns trigger as
+$BODY$
+begin
+if old.grade is not null
+then
+	raise notice 'Cannot delete non-null enrollment';
+else return old;
+end if;
+return null;
+end
+$BODY$
+language plpgsql;
+--ENROLLMENT restrict DROP if grade not null trigger
+create trigger enrollments_allow_null_drop_trigger
+before delete on enrollments
+for each row
+execute procedure enrollments_allow_null_drop();
+
 --ENROLLMENT check not max capacity
 create function enrollments_check_max_capacity()
 returns trigger as
@@ -174,7 +195,10 @@ begin
 				has_course := 1;
 				raise notice 'Student DOES HAVE PRE-REQ % per: %!',p.prereq,S_has_taken;
 			elsif p.prereq = S_has_taken.course_id AND S_has_taken.grade < 50 then
-				raise notice 'Student HAS TAKEN %, but FAILED!',p.prereq;
+				raise notice 'Student HAS TAKEN % on %, but FAILED: %',p.prereq,S_has_taken.term_code,S_has_taken;
+			elsif p.prereq = S_has_taken.course_id AND S_has_taken.term_code >= new.term_code then
+				raise notice 'Student has SIGNED UP FOR course which has concurrent prerequisitve course %',p.prereq;
+
 			end if;
 		end loop;
 		if has_course = 0 then 
@@ -197,6 +221,7 @@ before insert on enrollments
 for each row
 execute procedure enrollments_pre_req_check();
 
+/*
 --Test case COURSES
 insert into courses values('CSC 225'),('MATH 122'),('CSC 226'),('CSC 115'),('CSC 110'),('MATH 101');
 
@@ -210,12 +235,19 @@ insert into course_offerings values('CSC 225',201801,'Special Algorithms I','Bil
 insert into course_offerings values('MATH 122',201701,'Logic and Foundations','Gary M',50);
 insert into course_offerings values('CSC 115',201701,'Java II','Tibor van Rooij',200);
 insert into course_offerings values('CSC 115',201601,'Original Java II','Teebs',3);
+insert into course_offerings values('CSC 115',201801,'Improved Java II','Teebs',23);
 insert into course_offerings values('CSC 110',201501,'Java I','Bob',10);
+insert into course_offerings values('CSC 110',201509,'Java I Remedial','Bob',5);
+insert into course_offerings values('CSC 110',201601,'Java For Dummies','Guy',15);
 insert into course_offerings values('MATH 101',201501,'Calculus I','Amy',126);
 
 --Test case PRE_REQS  ( [PRE-REQ] [COURSE THAT NEEDS IT] [COURSE THAT NEEDS IT TERM CODE] )
-insert into pre_rex values('MATH 122', 'CSC 225', 201801),('CSC 115', 'CSC 225', 201801);
-insert into pre_rex values('CSC 110', 'CSC 115', 201601),('MATH 101','MATH 122', 201701);
+insert into pre_rex values('MATH 122', 'CSC 225', 201801),
+						  ('CSC 115', 'CSC 225', 201801),
+						  ('CSC 110', 'CSC 115', 201701),
+						  ('CSC 110', 'CSC 115', 201601),
+						  ('CSC 110', 'CSC 115', 201801),
+						  ('MATH 101','MATH 122', 201701);
 
 --Test case ENROLLMENTS
 insert into enrollments values('CSC 110', 201501, 'V00123456',50);
@@ -224,5 +256,13 @@ insert into enrollments values('MATH 122',201701,'V00123456',100);
 insert into enrollments values('CSC 115',201601,'V00123456',52);
 --insert into enrollments values('CSC 115',201601,'V00223344', 51);
 insert into enrollments values('CSC 225',201801,'V00123456', 84);
---insert into enrollments values('CSC ')
+
+insert into enrollments values('MATH 101', 201501,'V00556677',68);
+insert into enrollments values('MATH 122',201701,'V00556677',67);
+insert into enrollments values('CSC 110',201501,'V00556677', 49);
+insert into enrollments values('CSC 110',201509,'V00556677', 55);
 insert into enrollments values('CSC 115',201601,'V00556677', 78);
+insert into enrollments values('CSC 115',201801,'V00556677', 93);
+insert into enrollments values('CSC 225',201801,'V00556677', null);
+delete from enrollments where course_id = 'CSC 225';
+*/
