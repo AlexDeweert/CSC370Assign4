@@ -63,7 +63,7 @@ $BODY$
 begin
 if ( select count(student_id) from students where student_id = new.student_id ) > 0
 then 
-	return null;--raise exception 'Student already in database';
+	return null;
 end if;
 return new;
 end
@@ -155,18 +155,32 @@ create function enrollments_pre_req_check()
 returns trigger as
 $BODY$
 declare i integer := 0;
+declare has_course integer := 0;
 declare p record;
 declare S_has_taken record;
 begin
+	--For each pre-req for an enrollment course
 	for p in (select * from pre_rex
-	where new.course_id = pre_rex.course_id and
-	new.term_code = pre_rex.term_code) loop
+	where new.course_id = pre_rex.course_id and	new.term_code = pre_rex.term_code) loop
 		i := i+1;
 		raise notice 'Prereq#%, % requires course %',i,p.course_id,p.prereq;
+		--For all courses taken by a student
 		for S_has_taken in (select * from enrollments
 		where new.student_id = enrollments.student_id) loop
-			raise notice 'S_has_taken %',S_has_taken;
+			--Check if student has taken the pre-req for the enrollment course
+			if p.prereq = S_has_taken.course_id AND 
+			   S_has_taken.term_code < new.term_code AND
+               ((S_has_taken.grade >= 50) OR (S_has_taken.grade is null)) then
+				has_course := 1;
+				raise notice 'Student DOES HAVE PRE-REQ % per: %!',p.prereq,S_has_taken;
+			elsif p.prereq = S_has_taken.course_id AND S_has_taken.grade < 50 then
+				raise notice 'Student HAS TAKEN %, but FAILED!',p.prereq;
+			end if;
 		end loop;
+		if has_course = 0 then 
+			raise exception 'ERROR: Student % does not have required course %',new.student_id,p.prereq;
+		else has_course := 0;
+		end if;
 	end loop;
 --if i > 1
 --then
@@ -199,13 +213,16 @@ insert into course_offerings values('CSC 115',201601,'Original Java II','Teebs',
 insert into course_offerings values('CSC 110',201501,'Java I','Bob',10);
 insert into course_offerings values('MATH 101',201501,'Calculus I','Amy',126);
 
---Test case PRE_REQS
+--Test case PRE_REQS  ( [PRE-REQ] [COURSE THAT NEEDS IT] [COURSE THAT NEEDS IT TERM CODE] )
 insert into pre_rex values('MATH 122', 'CSC 225', 201801),('CSC 115', 'CSC 225', 201801);
 insert into pre_rex values('CSC 110', 'CSC 115', 201601),('MATH 101','MATH 122', 201701);
 
 --Test case ENROLLMENTS
+insert into enrollments values('CSC 110', 201501, 'V00123456',50);
+insert into enrollments values('MATH 101', 201501,'V00123456',58);
 insert into enrollments values('MATH 122',201701,'V00123456',100);
-insert into enrollments values('CSC 115',201601,'V00123456', null);
+insert into enrollments values('CSC 115',201601,'V00123456',52);
 --insert into enrollments values('CSC 115',201601,'V00223344', 51);
---insert into enrollments values('CSC 115',201601,'V00556677', 78);
-insert into enrollments values('CSC 225',201801,'V00123456', 25);
+insert into enrollments values('CSC 225',201801,'V00123456', 84);
+--insert into enrollments values('CSC ')
+insert into enrollments values('CSC 115',201601,'V00556677', 78);
